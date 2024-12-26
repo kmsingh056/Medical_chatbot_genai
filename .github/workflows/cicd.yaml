@@ -1,101 +1,58 @@
-name: workflow
+name: CI/CD Pipeline
 
 on:
   push:
     branches:
       - main
-    paths-ignore:
-      - 'README.md'
-
-permissions:
-  id-token: write
-  contents: read
+  pull_request:
+    branches:
+      - main
 
 jobs:
-  integration:
-    name: Continuous Integration
+  build-and-deploy:
     runs-on: ubuntu-latest
+
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+      ECR_REPO: ${{ secrets.ECR_REPO }}
+      PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Lint Code
-        run: echo "Linting repository"
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v2
 
-      - name: Run Unit Tests
-        run: echo "Running unit tests"
-
-  build-and-push-ecr-image:
-    name: Continuous Delivery
-    needs: integration
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-
-      - name: Install Utilities
+      - name: Log in to Amazon ECR
         run: |
-          sudo apt-get update
-          sudo apt-get install -y jq unzip
+          aws ecr get-login-password --region $AWS_DEFAULT_REGION | \
+          docker login --username AWS --password-stdin $ECR_REPO
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v1
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
-
-      - name: Build, Tag, and Push Image to Amazon ECR
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_NAME }}
-          IMAGE_TAG: latest
+      - name: Build Docker Image
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker build -t my-app .
+          docker tag my-app:latest $ECR_REPO:latest
 
-  continuous-deployment:
-    name: Continuous Deployment
-    needs: build-and-push-ecr-image
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v1
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v1
-
-      - name: Pull Latest Image
+      - name: Push Docker Image to ECR
         run: |
-          docker pull ${{ secrets.AWS_ECR_LOGIN_URI }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest
+          docker push $ECR_REPO:latest
 
-      - name: Stop and Remove Existing Container (if any)
+      - name: Deploy Application
         run: |
-          docker ps -q --filter "name=cnncls" | grep -q . && docker stop cnncls && docker rm cnncls || echo "No container to stop"
+          echo "Deploying application..."
+          # Add deployment scripts here, e.g., Kubernetes manifests or other infra management tools
 
-      - name: Run Docker Container
+      - name: Test APIs
         run: |
-          docker run -d \
-            -p 8080:8080 \
-            --name cnncls \
-            -e AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} \
-            -e AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
-            -e AWS_REGION=${{ secrets.AWS_REGION }} \
-            -e PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }} \
-            -e OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} \
-            ${{ secrets.AWS_ECR_LOGIN_URI }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest
+          echo "Testing Pinecone and OpenAI APIs..."
+          curl -H "Authorization: Bearer $PINECONE_API_KEY" https://api.pinecone.io/v1
+          curl -H "Authorization: Bearer $OPENAI_API_KEY" https://api.openai.com/v1
 
-      - name: Clean Up Old Docker Images
+      - name: Cleanup
+        if: always()
         run: |
-          docker system prune -f
+          echo "Cleaning up resources..."

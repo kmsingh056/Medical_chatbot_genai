@@ -52,19 +52,20 @@
 			$(document).ready(function() {
 				$("#messageArea").on("submit", function(event) {
 					const date = new Date();
-					const hour = date.getHours();
-					const minute = date.getMinutes();
-					const str_time = hour+":"+minute;
+					const hour = date.getHours().toString().padStart(2, '0'); // Ensures two digits
+					const minute = date.getMinutes().toString().padStart(2, '0'); // Ensures two digits
+					const str_time = hour + ":" + minute;
+		
 					var rawText = $("#text").val();
-
-					var userHtml = '<div class="d-flex justify-content-end mb-4"><div class="msg_cotainer_send">' + rawText + '<span class="msg_time_send">'+ str_time + '</span></div><div class="img_cont_msg"><img src="https://i.ibb.co/d5b84Xw/Untitled-design.png" class="rounded-circle user_img_msg"></div></div>';
+		
+					var userHtml = '<div class="d-flex justify-content-end mb-4"><div class="msg_cotainer_send">' + rawText + '<span class="msg_time_send">' + str_time + '</span></div><div class="img_cont_msg"><img src="https://i.ibb.co/d5b84Xw/Untitled-design.png" class="rounded-circle user_img_msg"></div></div>';
 					
 					$("#text").val("");
 					$("#messageFormeight").append(userHtml);
-
+		
 					$.ajax({
 						data: {
-							msg: rawText,	
+							msg: rawText,    
 						},
 						type: "POST",
 						url: "/get",
@@ -76,6 +77,7 @@
 				});
 			});
 		</script>
+		
         
     </body>
 </html>
